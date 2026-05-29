@@ -24,9 +24,13 @@ def get_lotka_law(df):
     author_prod['Freq'] = author_prod['N.Authors'] / author_prod['N.Authors'].sum()
     
     # Calculate theoretical values
-    lotka_law = np.polyfit(np.log10(author_prod['N.Articles']), np.log10(author_prod['Freq']), 1)
-    author_prod['Theoretical'] = 10**(lotka_law[1] - 2 * np.log10(author_prod['N.Articles']))
-    author_prod['Theoretical'] = author_prod['Theoretical'] / author_prod['Theoretical'].sum()
+    try:
+        lotka_law = np.polyfit(np.log10(author_prod['N.Articles']), np.log10(author_prod['Freq']), 1)
+        author_prod['Theoretical'] = 10**(lotka_law[1] - 2 * np.log10(author_prod['N.Articles']))
+        author_prod['Theoretical'] = author_prod['Theoretical'] / author_prod['Theoretical'].sum()
+    except Exception:
+        author_prod['Theoretical'] = np.nan
+
     
     # Create the plot with improved hover
     fig = go.Figure()

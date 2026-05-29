@@ -45,15 +45,18 @@ def get_co_citation(
         NetRefs = biblionetwork(M, analysis="co-citation", network="references", n=citNodes, sep=sep)
         Title = "Cited References network"
     elif field == "CR_AU":
-        if "CR_AU" not in M.columns:
+        if "CR_AU" not in (M.get().columns if hasattr(M, 'get') else M.columns):
             M = metaTagExtraction(M, Field="CR_AU", sep=sep)
         NetRefs = biblionetwork(M, analysis="co-citation", network="authors", n=citNodes, sep=sep)
         Title = "Cited Authors network"
     elif field == "CR_SO":
-        if "CR_SO" not in M.columns:
+        if "CR_SO" not in (M.get().columns if hasattr(M, 'get') else M.columns):
             M = metaTagExtraction(M, Field="CR_SO", sep=sep)
         NetRefs = biblionetwork(M, analysis="co-citation", network="sources", n=citNodes, sep=sep)
         Title = "Cited Sources network"
+
+    if NetRefs is None or NetRefs.empty:
+        raise ValueError("No citation relationships exist in this dataset. Please ensure your dataset contains 'Cited References' metadata (CR field) to perform Co-Citation Network analysis.")
 
     # Adjust number of labels if exceeds nodes
     label_n = min(citNodes, citlabelsize)

@@ -27,11 +27,24 @@ def get_local_cited_authors(df, num_of_cited_authors, fast_search=False):
 
     # Create a histogram network
     H = histNetwork(df, min_citations=loccit, sep=";", network=False)
+    if H is None:
+        # Database doesn't support local citation analysis
+        empty_df = pd.DataFrame(columns=["Authors", "N. of Local Citations"])
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="Local citation analysis not available for this database",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        return fig, empty_df
+
     LCS = H['histData']
     M = H['M']
     
     # Split authors and repeat local citations
     AU = M['AU'].explode()
+    AU = AU.astype(str).str.upper().str.strip()
     n = AU.groupby(level=0).size()
     
     # Create DataFrame for authors and local citations

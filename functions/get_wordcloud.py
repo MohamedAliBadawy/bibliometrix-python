@@ -64,9 +64,16 @@ def get_wordcloud(df, ngram, num_of_words_wc, field_wc, file_upload_terms_wc, fi
 
     compact_radius = radius * 0.6
 
+    # Calculate min and max counts to apply relative min-max scaling for pronounced font size contrast
+    counts = [item[1] for item in sorted_words]
+    max_count = max(counts) if counts else 1
+    min_count = min(counts) if counts else 1
+    count_range = max_count - min_count if max_count != min_count else 1
+
     for word, count in sorted_words:
-        size = max(500, min(2000, count * 2.5))  
-        font_size = max(20, min(120, count * 1.5))  
+        # Scale font size dynamically between 18 and 88 based on relative count
+        norm_val = (count - min_count) / count_range
+        font_size = int(18 + norm_val * 70)
         color = random.choice(colors)
         
         theta = random.uniform(0, 2 * math.pi)  
@@ -82,11 +89,25 @@ def get_wordcloud(df, ngram, num_of_words_wc, field_wc, file_upload_terms_wc, fi
     g.from_nx(G)
     
     for n in g.nodes:
-        n["size"] = G.nodes[n["id"]]["size"]
         n["font"] = {"size": G.nodes[n["id"]]["font"]["size"], "color": G.nodes[n["id"]]["font"]["color"], "strokeWidth": 1, "face": "Arial"}
         n["shape"] = "text"
     
-    g.force_atlas_2based(gravity=-30, central_gravity=0.01, spring_length=60, spring_strength=0.08, damping=0.9)
+    # Configure tight, compact Barnes-Hut physics to prevent text overlaps and keep words grouped close together
+    g.set_options("""
+    {
+      "physics": {
+        "barnesHut": {
+          "gravitationalConstant": -800,
+          "centralGravity": 0.75,
+          "springLength": 30,
+          "springConstant": 0.04,
+          "damping": 0.09,
+          "avoidOverlap": 1
+        },
+        "minVelocity": 0.5
+      }
+    }
+    """)
     
     # Save the HTML file
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".html")
@@ -111,25 +132,21 @@ def table_tag(df, tag, ngrams=1, remove_terms=None, synonyms=None):
     # Remove duplicates
     M = M.drop_duplicates(subset='SR')
     
-    # Get text data based on tag
-    if tag in ['AB', 'TI']:
-        text_data = term_extraction(df, field=tag, stemming=False, verbose=False, 
-                                  ngrams=ngrams, remove_terms=remove_terms, synonyms=synonyms)
-        text_data = text_data.get()
-        text_data = text_data[f"{tag}_TM"]
-    else:
-        text_data = M[tag]
+    # Get text data unconditionally
+    text_data = term_extraction(df, field=tag, stemming=False, verbose=False, 
+                                ngrams=ngrams, remove_terms=remove_terms, synonyms=synonyms)
+    text_data = text_data.get()
+    text_data = text_data[f"{tag}_TM"]
 
-    # Handle list columns (DE and ID)
-    if tag in ['DE', 'ID']:
-        text_data = text_data.dropna().apply(lambda x: ', '.join(eval(x) if isinstance(x, str) else x))
-
-    # Process words
-    if tag in ['DE', 'ID']:
-        words = text_data.dropna().astype(str).str.cat(sep=', ').upper()
-        words = [word.strip() for word in words.split(',') if word and word.strip()]
-    else:
-        words = [item for sublist in text_data for item in sublist]
+    # Process words in a float-safe way (since all fields now yield a list of lists of terms)
+    words = []
+    for sublist in text_data:
+        if isinstance(sublist, (list, tuple, set)):
+            for item in sublist:
+                if isinstance(item, (str, bytes)):
+                    words.append(str(item))
+        elif isinstance(sublist, str) and sublist:
+            words.append(sublist)
 
     # Apply n-grams if needed
     # if ngrams > 1 and tag not in ['DE', 'ID']:

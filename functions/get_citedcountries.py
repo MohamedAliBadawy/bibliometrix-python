@@ -26,6 +26,21 @@ def get_cited_countries(df, num_of_cited_countries, cited_countries_measure):
         .sort_values(by="TotalCitation", ascending=False)
     )
 
+    # Guard: no country data available (e.g. Lens exports without affiliations)
+    if tab.empty:
+        empty_df = pd.DataFrame(columns=["Country", "TotalCitation", "AverageArticleCitations"])
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(
+                text="Country data not available for this database.<br>Affiliation/address fields are required to extract countries.",
+                x=0.5, y=0.5, showarrow=False, font=dict(size=15), align="center"
+            )],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        fig._config = fig._config | {'modeBarButtonsToRemove': ['pan', 'select', 'lasso2d', 'toImage'], 'displaylogo': False}
+        return fig, empty_df
+
     # Convert columns to numeric to ensure correct calculations
     tab["TotalCitation"] = pd.to_numeric(tab["TotalCitation"])
     tab["AverageArticleCitations"] = pd.to_numeric(tab["AverageArticleCitations"])
@@ -68,7 +83,7 @@ def get_cited_countries(df, num_of_cited_countries, cited_countries_measure):
             y=list(range(n)),
             mode="markers+text",
             marker=dict(
-                size=18 + 6 * (x_values / x_values.max()),
+                size=18 + 6 * (x_values / max(x_values.max(), 1)),
                 color=x_values,
                 colorscale=[[0, "#B3D1F2"], [1, "#5567BB"]],
                 line=dict(width=1, color="#E0E0E0"),

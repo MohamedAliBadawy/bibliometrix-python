@@ -25,10 +25,14 @@ def get_thematic_map(df, field="ID", n=250, minfreq=5, ngrams=1, stemming=False,
         A tuple containing the HTML file name and a DataFrame with the extracted terms.
     """
     
-    map, graph_path, words, clusters, documentToClusters = thematic_map(
+    res = thematic_map(
         df, field=field, n=n, minfreq=minfreq, ngrams=ngrams, stemming=stemming, size=size,
         n_labels=n_labels, community_repulsion=community_repulsion, repel=repel,
         remove_terms=remove_terms, synonyms=synonyms, cluster=cluster, subgraphs=subgraphs
     )
     
+    if res is None:
+        raise ValueError("The network matrix is empty or no keywords met the frequency threshold. Please try lowering the minimum frequency (minFreq), increasing the number of terms (n), or selecting a different field.")
+        
+    map, graph_path, words, clusters, documentToClusters = res
     return map, graph_path, words, clusters, documentToClusters

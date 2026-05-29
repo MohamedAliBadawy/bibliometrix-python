@@ -101,6 +101,10 @@ def thematic_evolution(M, field="ID", years=None, n=250, min_freq=2, size=0.5, n
             stemming=stemming, size=size, n_labels=n_labels,
             repel=repel, remove_terms=remove_terms, synonyms=synonyms, cluster=cluster, subgraphs=False
         )
+        
+        if resk_tuple is None:
+            raise ValueError(f"For the period '{interval_label}', either the network co-occurrence matrix is empty or no keywords met the minimum frequency threshold. Please try lowering the minimum frequency (minFreq) or using a different year partition.")
+            
         # thematic_map returns a tuple, so convert to dict for compatibility
         resk = {
             'map': resk_tuple[0],
@@ -108,7 +112,7 @@ def thematic_evolution(M, field="ID", years=None, n=250, min_freq=2, size=0.5, n
             'words': resk_tuple[2],
             'clusters': resk_tuple[3],
             'documentToClusters': resk_tuple[4],
-            'nclust': resk_tuple[5]['nclust'] if len(resk_tuple) > 5 and isinstance(resk_tuple[5], dict) and 'nclust' in resk_tuple[5] else None,
+            'nclust': resk_tuple[5]['nclust'] if len(resk_tuple) > 5 and isinstance(resk_tuple[5], dict) and 'nclust' in resk_tuple[5] else len(resk_tuple[3]) if len(resk_tuple) > 3 and resk_tuple[3] is not None else 0,
             'net': resk_tuple[5]['net'] if len(resk_tuple) > 5 and isinstance(resk_tuple[5], dict) and 'net' in resk_tuple[5] else None,
             'subgraphs': resk_tuple[5]['subgraphs'] if len(resk_tuple) > 5 and isinstance(resk_tuple[5], dict) and 'subgraphs' in resk_tuple[5] else None,
             'params': resk_tuple[5]['params'] if len(resk_tuple) > 5 and isinstance(resk_tuple[5], dict) and 'params' in resk_tuple[5] else None,
@@ -125,8 +129,10 @@ def thematic_evolution(M, field="ID", years=None, n=250, min_freq=2, size=0.5, n
     K = len(list_df)
 
     if K < 2:
-        print("Error")
-        return None
+        py_clean = pd.to_numeric(M.get()['PY'], errors='coerce').dropna()
+        min_py = int(py_clean.min()) if not py_clean.empty else "N/A"
+        max_py = int(py_clean.max()) if not py_clean.empty else "N/A"
+        raise ValueError(f"Thematic Evolution requires at least 2 time periods. Please adjust your breakpoints to partition your dataset (publication years in dataset: {min_py} to {max_py}).")
     
     inc_matrix = []
     for k in range(1, K):
@@ -314,12 +320,24 @@ def timeslice(M, breaks=None, k=5):
 
     # Convert the 'PY' column to numeric
     M['PY'] = pd.to_numeric(M['PY'], errors='coerce')
+    py_clean = M['PY'].dropna()
+    if py_clean.empty:
+        raise ValueError("No valid publication years (PY) found in the dataset.")
+        
+    min_py = int(py_clean.min())
+    max_py = int(py_clean.max())
     
     # Calculate breakpoints if not provided
     if breaks is None or (isinstance(breaks, list) and len(breaks) == 0):
-        breaks = np.floor(np.linspace(M['PY'].min() - 1, M['PY'].max(), k + 1))
+        auto_breaks = np.floor(np.linspace(min_py, max_py + 1, k + 1))
+        breaks = sorted(list(set(int(b) for b in auto_breaks)))
     else:
-        breaks = [M['PY'].min() - 1] + breaks + [M['PY'].max()]
+        # Keep only user breaks that are strictly between min_py and max_py + 1
+        cleaned_breaks = sorted(list(set(int(b) for b in breaks)))
+        middle_breaks = [b for b in cleaned_breaks if min_py < b < max_py + 1]
+        breaks = [min_py] + middle_breaks + [max_py + 1]
+        # Ensure unique and monotonic
+        breaks = sorted(list(set(breaks)))
 
     # print("breaks:", breaks)
     

@@ -940,9 +940,13 @@ def factorial(X, method, n_clusters=5, k_max=5):
         rpc = row_coords.iloc[:, :K].values * evF
         cpc = col_coords.iloc[:, :K].values * evG
 
-        # Calcolo delle masse delle colonne
-        column_frequencies = X.apply(lambda col: col.value_counts(normalize=True)).fillna(0)
-        column_mass = column_frequencies.values.flatten()  # Vettore delle masse delle colonne
+        # Calcolo delle masse delle colonne (calcolato nell'ordine esatto di levelnames per evitare errori di broadcasting)
+        column_mass_list = []
+        for col in X.columns:
+            counts = X[col].value_counts(normalize=True)
+            for val in X[col].cat.categories:
+                column_mass_list.append(counts.get(val, 0.0))
+        column_mass = np.array(column_mass_list)
 
         # Calcolo delle distanze delle colonne
         column_distances = np.sum(cpc**2, axis=1)  # Calcola la somma dei quadrati delle coordinate

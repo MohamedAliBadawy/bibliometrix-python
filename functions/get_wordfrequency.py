@@ -40,14 +40,9 @@ def get_word_frequency(df, ngram, field_wf, file_upload_terms_wf, file_upload_sy
     data = term_extraction(df, field=field_wf, stemming=False, verbose=False, 
                                 ngrams=ngrams, remove_terms=remove_terms, synonyms=synonyms)
     data = data.get()
-    if field_wf == 'TI':
-        print(data[f"{field_wf}_TM"])
-
-    # Calculate word frequency
-    if field_wf in ['AB', 'TI']:
-        word_freq = keyword_growth(data, tag=f"{field_wf}_TM", top=top_words[1], cdf=(occurrences == 'cumulate'), remove_terms=remove_terms, synonyms=synonyms)
-    else:
-        word_freq = keyword_growth(data, tag=field_wf, top=top_words[1], cdf=(occurrences == 'cumulate'), remove_terms=remove_terms, synonyms=synonyms)
+    
+    # Calculate word frequency using the extracted tag column
+    word_freq = keyword_growth(data, tag=f"{field_wf}_TM", top=top_words[1], cdf=(occurrences == 'cumulate'), remove_terms=remove_terms, synonyms=synonyms)
 
 
     # Select terms between top_words[1] and top_words[2]
@@ -132,8 +127,9 @@ def keyword_growth(df, tag, sep=";", top=10, cdf=True, remove_terms=None, synony
     """
     # Parsing e filtraggio
     df = df.dropna(subset=[tag])
-    expanded = [item.upper() for sublist in df[tag].apply(lambda x: x.split(sep) if isinstance(x, str) else x) for item in sublist]
-    years = df.loc[df.index.repeat(df[tag].apply(lambda x: len(x.split(sep)) if isinstance(x, str) else len(x))), 'PY'].values
+    df_tag_lists = df[tag].apply(lambda x: [i.strip() for i in str(x).split(sep) if i.strip()] if isinstance(x, str) else x if isinstance(x, (list, tuple, set)) else [])
+    expanded = [str(item).upper() for sublist in df_tag_lists for item in sublist]
+    years = df.loc[df.index.repeat(df_tag_lists.apply(len)), 'PY'].values
     data = pd.DataFrame({'Term': expanded, 'Year': years})
     
     # Rimuovi terms
@@ -147,7 +143,11 @@ def keyword_growth(df, tag, sep=";", top=10, cdf=True, remove_terms=None, synony
     
     # Aggregazione
     freq = data.groupby(['Term', 'Year']).size().reset_index(name='Freq')
-    year_range = range(data['Year'].min(), data['Year'].max() + 1)
+    # Filter out invalid years (<= 1800) to prevent chart starting at year 0
+    freq = freq[freq['Year'] > 1800]
+    if freq.empty:
+        return pd.DataFrame(columns=['Year'])
+    year_range = range(int(freq['Year'].min()), int(freq['Year'].max()) + 1)
     
     # Selezione dei termini più frequenti
     top_terms = freq.groupby('Term')['Freq'].sum().nlargest(top).index

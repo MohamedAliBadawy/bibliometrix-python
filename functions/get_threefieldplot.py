@@ -32,16 +32,40 @@ def get_three_field_plot(df, left_field, middle_field, right_field, left_field_i
 
     # Document x Attribute matrix Field LEFT
     WL = cocMatrix(df, fields[0], binary=True, n=n[0])
+    if WL is None or WL.shape[1] == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text=f"No data available for field '{fields[0]}'",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        return go.FigureWidget(fig)
     n1 = min(n[0], WL.shape[1])
     TopL = WL.columns.tolist()
 
     # Document x Attribute matrix Field MIDDLE
     WM = cocMatrix(df, fields[1], binary=True, n=n[1])
+    if WM is None or WM.shape[1] == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text=f"No data available for field '{fields[1]}'",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        return go.FigureWidget(fig)
     n2 = min(n[1], WM.shape[1])
     TopM = WM.columns.tolist()
 
     # Document x Attribute matrix Field RIGHT
     WR = cocMatrix(df, fields[2], binary=True, n=n[2])
+    if WR is None or WR.shape[1] == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text=f"No data available for field '{fields[2]}'",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        return go.FigureWidget(fig)
     n3 = min(n[2], WR.shape[1])
     TopR = WR.columns.tolist()
 

@@ -14,22 +14,63 @@ def get_local_cited_refs(df, num_of_cited_refs, field_separator):
         A Plotly figure object and a DataFrame of the most local cited sources.
     """
     data = df.get()
-    
+
+    import re as _re
+    _lens_id_pat = _re.compile(r'^[0-9A-Z]{3}-[0-9A-Z]{3}-[0-9A-Z]{3}-[0-9A-Z]{3}-[0-9A-Z]{3,4}X?$')
+    db_val = str(data["DB"].iloc[0]).upper() if len(data) > 0 else ""
+
     if isinstance(data["CR"].iloc[0], list):  # Check if the first element is a list
         # Flatten the 'CR' column containing lists
-        source_counts = (
-            pd.DataFrame(data["CR"].explode())  # Explode lists into rows
-            .value_counts()  # Count occurrences
-            .reset_index()  # Reset index to get a DataFrame
-        )
-        source_counts.columns = ["Cited References", "Citations"]
+        exploded = pd.DataFrame(data["CR"].explode())
+        # Filter out empty strings and NaN values
+        exploded = exploded[exploded["CR"].apply(lambda x: isinstance(x, str) and x.strip() != "")]
+        if len(exploded) == 0:
+            source_counts = pd.DataFrame(columns=["Cited References", "Citations"])
+        else:
+            # Normalize to uppercase and strip outer whitespace (exactly like R)
+            exploded["CR"] = exploded["CR"].str.upper().str.strip()
+
+            # For Lens: filter out raw unresolved Lens IDs before counting
+            if db_val == "LENS":
+                exploded = exploded[~exploded["CR"].apply(
+                    lambda x: bool(_lens_id_pat.match(str(x).strip()))
+                )]
+
+            # Robust filter: Must contain at least one letter and have length >= 15 characters
+            exploded = exploded[
+                exploded["CR"].str.contains(r"[A-Z]", na=False) &
+                (exploded["CR"].str.len() >= 15)
+            ]
+
+            source_counts = (
+                exploded.value_counts()
+                .reset_index()
+            )
+            source_counts.columns = ["Cited References", "Citations"]
     else:
         # If not a list, continue with the string method
-        source_counts = data["CR"].str.split(field_separator).explode().value_counts().reset_index()
+        exploded = data["CR"].str.split(field_separator).explode()
+        exploded = exploded.dropna().str.upper().str.strip()
+        # For Lens: filter out raw unresolved Lens IDs before counting
+        if db_val == "LENS":
+            exploded = exploded[~exploded.apply(lambda x: bool(_lens_id_pat.match(str(x).strip())))]
+        exploded = exploded[(exploded != "") & (exploded.str.len() >= 15) & (exploded.str.contains(r"[A-Z]", na=False))]
+        source_counts = exploded.value_counts().reset_index()
         source_counts.columns = ["Cited References", "Citations"]
 
     # Filter out unwanted references
     source_counts = source_counts[source_counts["Cited References"] != "ANONYMOUS, NO TITLE CAPTURED"]
+
+    # Handle empty results
+    if len(source_counts) == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="No cited references data available",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        return fig, source_counts
 
     # Limit the number of sources to display
     if num_of_cited_refs > len(source_counts):

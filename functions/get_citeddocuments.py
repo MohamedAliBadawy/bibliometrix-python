@@ -74,7 +74,7 @@ def get_cited_documents(df, num_of_cited_docs, cited_docs_measure):
             y=y_vals,
             mode="markers+text",
             marker=dict(
-                size=18 + 6 * (tab[tab.columns[1]] / tab[tab.columns[1]].max()),
+                size=18 + 6 * (tab[tab.columns[1]] / max(tab[tab.columns[1]].max(), 1)),
                 color=tab[tab.columns[1]],
                 colorscale=[[0, "#B3D1F2"], [1, "#5567BB"]],
                 line=dict(width=1, color="#E0E0E0"),

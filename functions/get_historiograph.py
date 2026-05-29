@@ -30,6 +30,9 @@ def get_historiograph(df, node_label="AU1", histNodes=20, hist_isolates=True, hi
     df = metaTagExtraction(df, "SR")
     hist_results = histNetwork(df, min_citations=0, sep=sep, network=True)
 
+    if hist_results is None or 'NetMatrix' not in hist_results or hist_results['NetMatrix'] is None or hist_results['NetMatrix'].empty:
+        raise ValueError("No citation relationships exist in this dataset. Please ensure your dataset contains 'Cited References' metadata (CR field) to perform Historiograph analysis.")
+
     # 1. Costruzione iniziale del grafo
     hist_plot = histPlot(
         hist_results,
@@ -123,8 +126,10 @@ def get_historiograph(df, node_label="AU1", histNodes=20, hist_isolates=True, hi
     min_font_size = 10
     max_font_size = 130
     base_font_size = 24  # oppure calcolato in base a metrica
-    font_opacity = np.sqrt((histlabelsize - min_font_size) / (max_font_size - min_font_size)) * 0.8 + 0.3
-    font_opacity = max(0.1, min(1, font_opacity))  # clamp tra 0.1 e 1
+    norm_val = (histlabelsize - min_font_size) / (max_font_size - min_font_size)
+    norm_val = max(0.0, norm_val)
+    font_opacity = np.sqrt(norm_val) * 0.8 + 0.3
+    font_opacity = max(0.1, min(1.0, font_opacity))  # clamp tra 0.1 e 1
 
 
     # Calcola dimensione proporzionale a LCS

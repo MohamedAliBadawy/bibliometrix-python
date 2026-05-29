@@ -28,13 +28,36 @@ def table_tag(df, tag="CR", sep=";", ngrams=1, remove_terms=None, synonyms=None)
             lambda x: re.sub(r"\[.+?\]", "", x) if isinstance(x, str) else x
         )
 
-    # Convert each string to a list using ast.literal_eval
-    df[tag] = df[tag].apply(
-        lambda x: ast.literal_eval(x) if isinstance(x, str) else x
-    )
+    # Convert each string to a list using ast.literal_eval or splitting by separator
+    def parse_to_list(val):
+        if isinstance(val, (list, tuple, set)):
+            return val
+        if isinstance(val, str):
+            val_stripped = val.strip()
+            if not val_stripped:
+                return []
+            if (val_stripped.startswith('[') and val_stripped.endswith(']')) or \
+               (val_stripped.startswith('(') and val_stripped.endswith(')')):
+                try:
+                    res = ast.literal_eval(val_stripped)
+                    if isinstance(res, (list, tuple, set)):
+                        return res
+                except (ValueError, SyntaxError):
+                    pass
+            return [i.strip() for i in val.split(sep) if i.strip()]
+        return []
 
-    # Create a unique list of all words
-    all_words = [word for sublist in df[tag] for word in sublist]
+    df[tag] = df[tag].apply(parse_to_list)
+
+    # Create a unique list of all words in a float-safe way
+    all_words = []
+    for sublist in df[tag]:
+        if isinstance(sublist, (list, tuple, set)):
+            for word in sublist:
+                if isinstance(word, (str, bytes)):
+                    all_words.append(str(word))
+        elif isinstance(sublist, str) and sublist:
+            all_words.append(sublist)
 
     # Clean text (remove extra spaces, isolated periods and commas)
     words = [

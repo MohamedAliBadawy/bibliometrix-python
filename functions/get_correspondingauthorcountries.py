@@ -19,11 +19,38 @@ def get_corresponding_author_countries(df, top_k_countries):
 
     # Assicurati che le colonne siano di tipo stringa e rimuovi righe con valori mancanti
     data = data.dropna(subset=["AU1_CO", "AU_CO"])
+
+    # Guard: no country data (e.g. Lens without affiliations)
+    if data.empty:
+        empty_df = pd.DataFrame(columns=["Country", "Articles", "SCP", "MCP"])
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(
+                text="Country data not available for this database.<br>Affiliation/address fields are required to extract countries.",
+                x=0.5, y=0.5, showarrow=False, font=dict(size=15), align="center"
+            )],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        fig._config = fig._config | {'modeBarButtonsToRemove': ['pan', 'select', 'lasso2d', 'toImage'], 'displaylogo': False}
+        return fig, empty_df
+
     data["AU_CO"] = data["AU_CO"].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
     data["AU"] = data["AU"].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
 
     # Determina il numero di collaborazioni per riga
-    data["nCO"] = data["AU_CO"].apply(lambda x: 1 if len(set(x.split(", "))) > 1 else 0)
+    def compute_nco(row):
+        au1_co = row["AU1_CO"]
+        au_co = row["AU_CO"]
+        if isinstance(au_co, list):
+            if any(country != au1_co for country in au_co):
+                return 1
+        elif isinstance(au_co, str):
+            if any(country.strip() != au1_co for country in au_co.split(",") if country.strip()):
+                return 1
+        return 0
+
+    data["nCO"] = data.apply(compute_nco, axis=1)
 
     # Conta il numero di articoli, SCP e MCP per paese
     country_counts = data.groupby("AU1_CO").agg(

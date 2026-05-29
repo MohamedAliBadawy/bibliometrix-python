@@ -22,6 +22,8 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
     minfreq = max(0, int(minfreq * len(M) // 1000))
 
     Net = network(df, analysis=analysis, field=field, stemming=stemming, n=n, community_repulsion=community_repulsion, cluster=clustering)
+    if Net is None or 'graph' not in Net or Net['graph'] is None:
+        raise ValueError(f"No coupling relationships can be calculated. The coupling field '{field}' is empty or has no common links in this dataset.")
     net = Net['graph']
   
     NCS = normalizeCitationScore(df, field=analysis, impact_measure=impact_measure)
@@ -33,46 +35,56 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
     # Converte la prima colonna di NCS in maiuscolo
     NCS.iloc[:, 0] = NCS.iloc[:, 0].str.upper()
 
+    # Deduplicate NCS on the key column to prevent the merge from producing more rows
+    # than graph vertices (can happen when two papers share the same SR, e.g. same
+    # first-author initials, year and source in Lens exports)
+    NCS[analysis] = NCS[analysis].astype(str).str.upper()
+    NCS = NCS.drop_duplicates(subset=[analysis], keep='first')
+
     # Label dei nodi del grafo
     label = pd.Series(net.vs['name'])
 
-    # Creazione del DataFrame L per il merge con NCS
-    L = pd.DataFrame({'id': label.str.upper()})
-    L.columns = [analysis]  # Rinominare la colonna per corrispondere a `analysis`
-
-    # Garantire che i tipi di dato e il formato siano compatibili
-    NCS[analysis] = NCS[analysis].astype(str).str.upper()
-    L[analysis] = L[analysis].astype(str).str.upper()
-
-    # Merge tra L e NCS (simile a left_join in R)
-    D = L.merge(NCS, left_on=analysis, right_on=analysis, how='left', copy=True)
-
     # Get vertex names and create initial dataframes
-    label = pd.Series(net.vs['name'])
-    
     # First merge with NCS
     L = pd.DataFrame({'id': label.str.upper()})
     L.columns = [analysis]
+    L[analysis] = L[analysis].astype(str).str.upper()
     D = L.merge(NCS, on=analysis, how='left', copy=True)
-    
+    D = D.fillna(0).reset_index(drop=True)
+
     # Second merge with cluster results
-    L = pd.DataFrame({'id': label.str.lower()})
-    L.columns = [analysis]
     Net['cluster_res'] = Net['cluster_res'].rename(columns={'vertex': analysis})
-    C = L.merge(Net['cluster_res'], on=analysis, how='left', copy=True)
-    
+    Net['cluster_res'][analysis] = Net['cluster_res'][analysis].astype(str).str.lower()
+    Net['cluster_res'] = Net['cluster_res'].drop_duplicates(subset=[analysis], keep='first')
+
+    L2 = pd.DataFrame({'id': label.str.lower()})
+    L2.columns = [analysis]
+    C = L2.merge(Net['cluster_res'], on=analysis, how='left', copy=True)
+    C = C.fillna(0).reset_index(drop=True)
+
     # Get group membership and colors
     group = Net['cluster_obj'].membership
     color = net.vs['color']
-    
+
     # Convert colors to hex and handle NaN values
     color = [to_hex(c) if pd.notna(c) else "#D3D3D3" for c in color]
-    # color[pd.isna(color)] = "#B3B3B3" # Colore grigio chiaro in formato RGBA
+
+    # Safety check: if merge produced wrong number of rows, truncate/pad to match
+    if len(D) != len(group):
+        # Re-build D strictly from the graph labels (one row per node, no duplicates)
+        D = pd.DataFrame({analysis: label.str.upper()}).merge(NCS, on=analysis, how='left').fillna(0)
+        D = D.groupby(analysis, sort=False).first().reset_index()
+        # Re-align to graph node order
+        node_order = pd.DataFrame({analysis: label.str.upper(), '_order': range(len(label))})
+        D = node_order.merge(D, on=analysis, how='left').sort_values('_order').drop(columns='_order').fillna(0).reset_index(drop=True)
+        C = pd.DataFrame({analysis: label.str.lower()}).merge(Net['cluster_res'], on=analysis, how='left').fillna(0).reset_index(drop=True)
 
     D['group'] = group
     D['color'] = color
 
+
     DC = pd.concat([D, C.iloc[:, 1:]], axis=1)
+    DC = DC.fillna(0)
     DC['name'] = DC.iloc[:, 0]
     
     # Resetta l'indice per evitare ambiguità
@@ -96,11 +108,15 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
         'words': '\n'.join((x['name'] + ' ' + x['MNLCS'].astype(str)).tolist())
     })).reset_index()
 
+    df['centrality'] = df['centrality'].fillna(0.0)
+    df['impact'] = df['impact'].fillna(0.0)
     df['rcentrality'] = df['centrality'].rank()
     df['rimpact'] = df['impact'].rank()
 
     meandens = df['rimpact'].mean()
     meancentr = df['rcentrality'].mean()
+    if pd.isna(meandens): meandens = 0.0
+    if pd.isna(meancentr): meancentr = 0.0
     df = df[df['freq'] >= minfreq]
 
     df_lab = df_lab[df_lab['group'].isin(df['group'])]
@@ -109,7 +125,7 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
 
     df_lab['ClusterName'] = df_lab['Cluster'].map(df.set_index('group')['label'])
 
-    M = M.drop(columns=['SR']).reset_index()
+    M = M.reset_index(drop=True)
 
     if label_term is None:
         label_term = "null"
@@ -117,8 +133,14 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
         w = labeling(M, df_lab, term=label_term, n=n, n_labels=n_labels, analysis=analysis, ngrams=ngrams)
         df['label'] = w
 
+    df['freq'] = df['freq'].fillna(1.0).replace(0, 1.0)
     df['log_freq'] = np.log(df['freq'])
+    df['log_freq'] = df['log_freq'].fillna(0.0).replace([np.inf, -np.inf], 0.0)
     df['adjusted_color'] = df['color'].apply(lambda x: adjust_color(x, alpha=0.5))
+
+    # Clean df completely before px.scatter is initialized
+    df = df.fillna(0)
+    df = df.replace([np.inf, -np.inf], 0)
 
     ################## FIGURE ##################
     # Calculate range for bubble sizes based on size parameter
@@ -194,7 +216,12 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
     max_size = 30 * (1 + size)
     
     # Calculate size reference for correct scaling
-    sizeref = 2.0 * max(df['log_freq']) / (max_size**2)
+    max_log_freq = max(df['log_freq']) if not df.empty else 0.0
+    if pd.isna(max_log_freq) or max_log_freq <= 0:
+        max_log_freq = 1.0
+    sizeref = 2.0 * max_log_freq / (max_size**2)
+    if pd.isna(sizeref) or sizeref <= 0:
+        sizeref = 1.0
     
     fig.update_traces(
         marker=dict(
@@ -205,13 +232,12 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
             sizeref=sizeref,  # Dynamic sizing based on log_freq range
             line=dict(width=10)  # Border for points
         )
-        
     )
 
     # Aggiunge le etichette se size > 0
-    if size > 0:
+    if size > 0 and not df.empty:
         # Replace \n with <br> for Plotly and only show labels for freq > 1
-        labels = df['label'].where(df['freq'] > 1, '').str.lower().str.replace('\n', '<br>')
+        labels = df['label'].where(df['freq'] > 1, '').fillna('').astype(str).str.lower().str.replace('\n', '<br>')
         text_size = 3 * (1 + size)
         
         # Implementa repel se richiesto
@@ -239,11 +265,30 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
             ))
 
     # Calcola i limiti degli assi come in R
-    rangex = max(meancentr - df['rcentrality'].min(), df['rcentrality'].max() - meancentr)
-    rangey = max(meandens - df['rimpact'].min(), df['rimpact'].max() - meandens)
+    if df.empty:
+        xlimits = [0.0, 10.0]
+        ylimits = [0.0, 10.0]
+    else:
+        df['rcentrality'] = df['rcentrality'].fillna(0.0)
+        df['rimpact'] = df['rimpact'].fillna(0.0)
+        
+        xmin = df['rcentrality'].min()
+        xmax = df['rcentrality'].max()
+        ymin = df['rimpact'].min()
+        ymax = df['rimpact'].max()
+        
+        rangex = max(meancentr - xmin, xmax - meancentr) if pd.notna(xmin) and pd.notna(xmax) else 1.0
+        rangey = max(meandens - ymin, ymax - meandens) if pd.notna(ymin) and pd.notna(ymax) else 1.0
+        
+        if pd.isna(rangex) or rangex == 0: rangex = 1.0
+        if pd.isna(rangey) or rangey == 0: rangey = 1.0
 
-    xlimits = [meancentr - rangex - 0.5, meancentr + rangex + 0.5]
-    ylimits = [meandens - rangey - 0.5, meandens + rangey + 0.5]
+        xlimits = [meancentr - rangex - 0.5, meancentr + rangex + 0.5]
+        ylimits = [meandens - rangey - 0.5, meandens + rangey + 0.5]
+        
+        # Guard against nan values
+        xlimits = [0.0 if pd.isna(x) else x for x in xlimits]
+        ylimits = [0.0 if pd.isna(y) else y for y in ylimits]
 
     # Aggiorna il layout del grafico per match con il tema di R
     fig.update_layout(
@@ -293,6 +338,12 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
     }
     params = pd.DataFrame(list(params.items()), columns=['params', 'values'])
 
+    # Clean any NaN values from return DataFrames to be completely JSON compliant in itables/Plotly
+    df = df.fillna(0)
+    df_lab = df_lab.fillna(0)
+    D = D.fillna(0)
+    params = params.fillna(0)
+
     results = {
         'map': g,
         'clusters': df,
@@ -308,28 +359,29 @@ def couplingMap(df, analysis="documents", field="CR", n=500, minfreq=5,
 #### FUNCTION DA METTERE IN SERVICES???
 # Normalizzazione del punteggio di citazione
 def normalizeCitationScore(df, field="documents", impact_measure="local"):
+    M = df.get() if hasattr(df, 'get') else df
     if field not in ["documents", "authors", "sources"]:
         print('\nfield argument is incorrect.\n\nPlease select one of the following choices: "documents", "authors", "sources"\n\n')
         return None
 
     # Applica localCitations se richiesto
     if impact_measure == "local":
-        df = localCitations(df, fast_search=False, sep=";")['M']
+        M = localCitations(df, fast_search=False, sep=";")['M']
     else:
-        df['LCS'] = 0
+        M['LCS'] = 0
 
     # Converte colonne in numerico
-    df['TC'] = df['TC'].astype(float, errors='ignore')
-    df['PY'] = df['PY'].astype(float, errors='ignore')
+    M['TC'] = M['TC'].astype(float, errors='ignore')
+    M['PY'] = M['PY'].astype(float, errors='ignore')
 
     # Rimpiazza LCS=0 con 1 e calcola NGCS/NLCS per anno
-    df['LCS'] = df['LCS'].replace(0, 1)
-    df['NGCS'] = df.groupby('PY')['TC'].transform(lambda x: x / x.mean(skipna=True))
-    df['NLCS'] = df.groupby('PY')['LCS'].transform(lambda x: x / x.mean(skipna=True))
+    M['LCS'] = M['LCS'].replace(0, 1)
+    M['NGCS'] = M.groupby('PY')['TC'].transform(lambda x: x / x.mean(skipna=True))
+    M['NLCS'] = M.groupby('PY')['LCS'].transform(lambda x: x / x.mean(skipna=True))
 
     # Suddivisione per tipo di campo richiesto
     if field == "documents":
-        NCS = df[['SR', 'PY', 'NGCS', 'NLCS', 'TC', 'LCS']].rename(columns={
+        NCS = M[['SR', 'PY', 'NGCS', 'NLCS', 'TC', 'LCS']].rename(columns={
             'NGCS': 'MNGCS',
             'NLCS': 'MNLCS',
             'LCS': 'LC',
@@ -337,8 +389,13 @@ def normalizeCitationScore(df, field="documents", impact_measure="local"):
         })
 
     elif field == "authors":
-        df['AU'] = df['AU'].fillna('').str.split(';')  # Divide gli autori
-        exploded = df.explode('AU').assign(AU=lambda x: x['AU'].str.strip())  # Espande e rimuove spazi extra
+        # AU may already be a list (from ETL normalization) or a semicolon-delimited string
+        M['AU'] = M['AU'].apply(
+            lambda x: x if isinstance(x, list) else
+                      [a.strip() for a in str(x).split(';') if a.strip()] if pd.notna(x) and str(x).strip() else []
+        )
+        exploded = M.explode('AU').assign(AU=lambda x: x['AU'].astype(str).str.strip())  # Espande e rimuove spazi extra
+        exploded = exploded[exploded['AU'].notna() & (exploded['AU'] != '') & (exploded['AU'] != 'nan')]
 
         NCS = (
             exploded.groupby('AU').agg(
@@ -354,7 +411,7 @@ def normalizeCitationScore(df, field="documents", impact_measure="local"):
 
     elif field == "sources":
         NCS = (
-            df.groupby('SO').agg(
+            M.groupby('SO').agg(
                 NP=('PY', 'count'),
                 MNGCS=('NGCS', 'mean'),
                 MNLCS=('NLCS', 'mean'),
@@ -371,45 +428,56 @@ def normalizeCitationScore(df, field="documents", impact_measure="local"):
     else:
         NCS['MNLCS'] = NCS['MNLCS'].fillna(0)
 
-    return NCS
-
-
-# Network
+    return NCS# Network
 def network(df, analysis, field, stemming, n, cluster, community_repulsion):
     NetMatrix = None  # Inizializza la matrice della rete
     
+    # 1. Determine Coupling Unit field tag based on analysis type
     if analysis == "documents":
-        if field == "CR":
-            NetMatrix = biblionetwork(df, analysis="coupling", network="references", short=True, shortlabel=False, sep=";")
-        else:
-            if field in ["TI", "AB"]:
-                df = term_extraction(df, field=field, verbose=False, stemming=stemming)
-                if field == "TI":
-                    NetMatrix = biblionetwork(df, analysis="coupling", network="references", short=True, shortlabel=False, sep=";")
-                else:
-                    NetMatrix = biblionetwork(df, analysis="coupling", network="references", short=True, shortlabel=False, sep=";")
-    
+        unit_field = "SR"
     elif analysis == "authors":
-        if field == "CR":
-            NetMatrix = biblionetwork(df, analysis="coupling", network="authors", short=True)
-        else:
-            if field in ["TI", "AB"]:
-                df = term_extraction(df, field=field, verbose=False, stemming=stemming)
-            # NetMatrix = coupling(df, field, analysis="authors")
-    
+        unit_field = "AU"
     elif analysis == "sources":
-        if field == "CR":
-            NetMatrix = biblionetwork(df, analysis="coupling", network="sources", short=True)
-        else:
-            if field in ["TI", "AB"]:
-                df = term_extraction(df, field=field, verbose=False, stemming=stemming)
-            # NetMatrix = coupling(df, field, analysis="sources")
+        unit_field = "SO"
+    else:
+        print(f"Unknown analysis type: {analysis}")
+        return None
+
+    # 2. Determine Coupling Attribute field tag based on coupling measure
+    # If coupling measure is TI or AB, we perform term extraction first
+    if field in ["TI", "AB"]:
+        df = term_extraction(df, field=field, verbose=False, stemming=stemming)
+        attr_field = f"{field}_TM"
+    else:
+        attr_field = field
+
+    # 3. Compute generalized coupling
+    print(f"[Coupling] Computing coupling network: Unit={unit_field}, Attribute={attr_field}")
+    
+    # Get Coupling Unit matrix WU (docs x units)
+    WU = cocMatrix(df, Field=unit_field, type="sparse", n=None, sep=";", short=True)
+    # Get Coupling Attribute matrix WA (docs x attributes)
+    WA = cocMatrix(df, Field=attr_field, type="sparse", n=None, sep=";", short=True)
+    
+    if WU is not None and WA is not None and not WU.empty and not WA.empty:
+        # Align index/rows of both matrices just in case
+        common_idx = WU.index.intersection(WA.index)
+        WU = WU.loc[common_idx]
+        WA = WA.loc[common_idx]
+        
+        # Calculate cross product and coupling matrix
+        # Compute: AU_matrix = WA.T @ WU (attributes x units)
+        AU_matrix = WA.T @ WU
+        # Compute: NetMatrix = AU_matrix.T @ AU_matrix (units x units)
+        NetMatrix = AU_matrix.T @ AU_matrix
+    else:
+        print("[Coupling] Could not compute coupling network because one of the matrices is empty or None")
+        NetMatrix = None
     
     # Controllo se la matrice è None (caso di errore o input non valido)
-    if NetMatrix is None:
-        print("\n\nNetwork matrix is empty or analysis type is incorrect!\nThe analysis cannot be performed\n\n")
+    if NetMatrix is None or NetMatrix.empty or NetMatrix.values.sum() == 0:
+        print("\n\nNetwork matrix is empty!\nThe analysis cannot be performed\n\n")
         return None
-    
     
     # Converti in DataFrame se non lo è già
     if not isinstance(NetMatrix, pd.DataFrame):
@@ -417,7 +485,6 @@ def network(df, analysis, field, stemming, n, cluster, community_repulsion):
     
     # Rimuovi colonne e righe con nomi vuoti
     NetMatrix = NetMatrix.loc[:, NetMatrix.columns.str.strip() != ""].loc[NetMatrix.index.str.strip() != ""]
-
     
     if NetMatrix.shape[0] > 0:
         Net = network_plot(NetMatrix, normalize="salton", n=n, 
@@ -516,8 +583,8 @@ def best_lab(df, tab_global, n_labels, term):
 
 
 def localCitations(df, fast_search=False, sep=";"):
-    df = metaTagExtraction(df, "SR")
-    M = df.get() 
+    df = metaTagExtraction(df, "SR") if hasattr(df, 'get') else df
+    M = df.get() if hasattr(df, 'get') else df
     M['TC'] = M['TC'].fillna(0)
     if fast_search:
         loccit = M['TC'].quantile(0.75)
@@ -525,28 +592,44 @@ def localCitations(df, fast_search=False, sep=";"):
         loccit = 1
     
     H = histNetwork(df, min_citations=loccit, sep=sep, network=False)
-    LCS = H['histData']
-    M = H['M']
-    
-    # Split authors and repeat local citations
-    AU = M['AU'].explode()
-    n = AU.groupby(level=0).size()
-    
-    # Create DataFrame for authors and local citations
-    df_authors = pd.DataFrame({'AU': AU, 'LCS': M['LCS'].repeat(n).values})
-    author_counts = df_authors.groupby('AU')['LCS'].sum().reset_index()
-    author_counts.columns = ["Authors", "N. of Local Citations"]
-    author_counts = author_counts.sort_values(by="N. of Local Citations", ascending=False)
-    
-    if 'SR' in M.columns:
-        LCS = M[['SR', 'DI', 'PY', 'LCS', 'TC']].rename(columns={
-            'SR': 'Paper',
-            'DI': 'DOI',
-            'PY': 'Year',
-            'LCS': 'LCS',
-            'TC': 'GCS'
-        })
-        LCS = LCS.sort_values(by='LCS', ascending=False)
+    if H is None:
+        # Fallback if histNetwork fails or is incompatible (e.g. Dimensions/WoS with no CR)
+        M = M.copy()
+        M['LCS'] = 0.0
+        author_counts = pd.DataFrame(columns=["Authors", "N. of Local Citations"])
+        if 'SR' in M.columns:
+            LCS = M[['SR', 'DI', 'PY', 'LCS', 'TC']].rename(columns={
+                'SR': 'Paper',
+                'DI': 'DOI',
+                'PY': 'Year',
+                'LCS': 'LCS',
+                'TC': 'GCS'
+            })
+        else:
+            LCS = pd.DataFrame(columns=["Paper", "DOI", "Year", "LCS", "GCS"])
+    else:
+        LCS = H['histData']
+        M = H['M']
+        
+        # Split authors and repeat local citations
+        AU = M['AU'].explode()
+        n = AU.groupby(level=0).size()
+        
+        # Create DataFrame for authors and local citations
+        df_authors = pd.DataFrame({'AU': AU, 'LCS': M['LCS'].repeat(n).values})
+        author_counts = df_authors.groupby('AU')['LCS'].sum().reset_index()
+        author_counts.columns = ["Authors", "N. of Local Citations"]
+        author_counts = author_counts.sort_values(by="N. of Local Citations", ascending=False)
+        
+        if 'SR' in M.columns:
+            LCS = M[['SR', 'DI', 'PY', 'LCS', 'TC']].rename(columns={
+                'SR': 'Paper',
+                'DI': 'DOI',
+                'PY': 'Year',
+                'LCS': 'LCS',
+                'TC': 'GCS'
+            })
+            LCS = LCS.sort_values(by='LCS', ascending=False)
     
     CR = {
         'Authors': author_counts,

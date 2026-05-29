@@ -13,11 +13,16 @@ def get_average_citations(df):
     """
     data = df.get()
 
+    # Filter out invalid years (<= 1800)
+    valid_data = data[data["PY"] > 1800]
+    if valid_data.empty:
+        valid_data = data
+
     # Calculate the current year
     current_year = pd.Timestamp.now().year + 1
 
     # Group by publication year and calculate mean total citations per article
-    table = data.groupby("PY").agg(
+    table = valid_data.groupby("PY").agg(
         MeanTCperArt=("TC", lambda x: round(x.mean(), 2)),
         N=("PY", "count")
     ).reset_index()

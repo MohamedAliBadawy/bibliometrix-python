@@ -743,6 +743,7 @@ with ui.tags.div(id="mainContent", class_="main-content"):
                 def mostra():
                     database = get_database(input)
                     ui.update_sidebar("sidebar_load_data", show=False)
+                    sidebar_needs_update.set(sidebar_needs_update.get() + 1)
                     ui.update_action_button("export_button", disabled=False)
                     ui.markdown(f"<h3 style='text-align:center; color: #5567BB;'>Data of {database}</h3>")
 
@@ -853,8 +854,135 @@ with ui.tags.div(id="mainContent", class_="main-content"):
                     """
                 ),
 
+
         with ui.nav_panel("None", value="API"):
-            ui.h3("🚧 Warning: API is under construction 🚧")
+            ui.h3("🔎 API Data Retrieval", style="color: #5567BB;")
+            ui.p("Fetch bibliographic data directly from public APIs without downloading files.")
+            
+            with ui.navset_card_tab():
+                # OpenAlex Sub-Tab
+                with ui.nav_panel("OpenAlex Data Collection"):
+                    with ui.layout_sidebar(fillable=False, fill=False):
+                        with ui.sidebar(position="right"):
+                            ui.h5("OpenAlex Options", style="color: #5567BB;")
+                            ui.input_select("oa_search_field", "Search Field:", {"title_abstract": "Title and Abstract", "title": "Title", "author": "Author"})
+                            ui.input_text("oa_query", "Search Query:", value='machine learning')
+                            ui.input_numeric("oa_max_records", "Max Records:", value=100, min=10, max=5000)
+                            ui.input_numeric("oa_year_from", "Year From (optional):", value=None)
+                            ui.input_numeric("oa_year_to", "Year To (optional):", value=None)
+                            ui.input_action_button("openalex_fetch", "Fetch from OpenAlex", icon=ICONS["play"], class_="btn-primary")
+                            ui.p("Fetches records via OpenAlex REST API with pagination.", style="color: gray; font-size: 11px;")
+                        
+                        @render.express()
+                        @reactive.event(input.openalex_fetch)
+                        def handle_openalex():
+                            query = input.oa_query()
+                            max_res = input.oa_max_records()
+                            year_from = input.oa_year_from()
+                            year_to = input.oa_year_to()
+                            search_field = input.oa_search_field()
+                            
+                            ui.markdown(f"<h3 style='text-align:center; color: #5567BB;'>Retrieving from OpenAlex...</h3>")
+                            
+                            try:
+                                from www.services.api_retriever import api_etl_pipeline
+                                from functions.get_table import get_table, init_itables
+                                
+                                standardised = api_etl_pipeline(
+                                    "OPENALEX",
+                                    query,
+                                    max_results=max_res,
+                                    from_year=year_from,
+                                    to_year=year_to,
+                                    search_field=search_field,
+                                )
+                                if len(standardised) > 0:
+                                    df.set(standardised)
+                                    reset_all_analyses()
+                                    ui.p(f"✅ Successfully retrieved and standardized {len(standardised)} records from OpenAlex.", style="color: green; text-align:center; font-weight: bold;")
+                                    ui.p("Your data is ready for analysis. The quality report is shown below:", style="text-align:center;")
+                                    
+                                    # Render the completeness table exactly like the import tab!
+                                    ui.HTML(init_itables())
+                                    table_ui, _, _ = get_table("OpenAlex", df)
+                                    table_ui
+                                    
+                                    sidebar_needs_update.set(sidebar_needs_update.get() + 1)
+                                    
+                                    ui.notification_show("Data loaded! Check the left sidebar for analysis tools.", type="message", duration=10)
+                                    ui.div(
+                                        ui.h5("Ready for Analysis!", style="color: #5567BB;"),
+                                        ui.p("You can now click on the side menu options (e.g. 'Dataset' -> 'Main Information') to start exploring."),
+                                        style="text-align:center; margin-top: 30px; padding: 20px; border: 2px dashed #5567BB; border-radius: 10px;"
+                                    )
+                                else:
+                                    ui.p(f"⚠️ No results found for query: '{query}'.", style="color: orange; text-align:center;")
+                            except Exception as e:
+                                ui.div(
+                                    ui.h5("Error during API retrieval:", style="color: red;"),
+                                    ui.p(str(e), style="color: red;")
+                                )
+
+                # PubMed Sub-Tab
+                with ui.nav_panel("PubMed Data Collection"):
+                    with ui.layout_sidebar(fillable=False, fill=False):
+                        with ui.sidebar(position="right"):
+                            ui.h5("PubMed Options", style="color: #5567BB;")
+                            ui.input_select("pubmed_search_field", "Search Field:", {"title_abstract": "Title and Abstract", "title": "Title", "author": "Author"})
+                            ui.input_text("pubmed_query", "Search Query:", value="machine learning")
+                            ui.input_numeric("pubmed_max_results", "Max Records:", value=100, min=10, max=5000)
+                            ui.input_numeric("pubmed_year_from", "Year From (optional):", value=None)
+                            ui.input_numeric("pubmed_year_to", "Year To (optional):", value=None)
+                            ui.input_action_button("pubmed_fetch", "Fetch from PubMed", icon=ICONS["play"], class_="btn-primary")
+                            ui.p("Fetches records via NCBI E-utilities (Two-Phase Pagination).", style="color: gray; font-size: 11px;")
+                        
+                        @render.express()
+                        @reactive.event(input.pubmed_fetch)
+                        def handle_pubmed():
+                            query = input.pubmed_query()
+                            max_res = input.pubmed_max_results()
+                            year_from = input.pubmed_year_from()
+                            year_to = input.pubmed_year_to()
+                            search_field = input.pubmed_search_field()
+                            
+                            ui.markdown(f"<h3 style='text-align:center; color: #5567BB;'>Retrieving from PubMed...</h3>")
+                            
+                            try:
+                                from www.services.api_retriever import api_etl_pipeline
+                                from functions.get_table import get_table, init_itables
+                                
+                                standardised = api_etl_pipeline(
+                                    "PUBMED",
+                                    query,
+                                    max_results=max_res,
+                                    from_year=year_from,
+                                    to_year=year_to,
+                                    search_field=search_field,
+                                )
+                                if len(standardised) > 0:
+                                    df.set(standardised)
+                                    reset_all_analyses()
+                                    ui.p(f"✅ Successfully retrieved and standardized {len(standardised)} records from PubMed.", style="color: green; text-align:center; font-weight: bold;")
+                                    
+                                    ui.HTML(init_itables())
+                                    table_ui, _, _ = get_table("PubMed", df)
+                                    table_ui
+                                    
+                                    sidebar_needs_update.set(sidebar_needs_update.get() + 1)
+                                    
+                                    ui.notification_show("Data loaded! Check the left sidebar for analysis tools.", type="message", duration=10)
+                                    ui.div(
+                                        ui.h5("Ready for Analysis!", style="color: #5567BB;"),
+                                        ui.p("You can now click on the side menu options (e.g. 'Dataset' -> 'Main Information') to start exploring."),
+                                        style="text-align:center; margin-top: 30px; padding: 20px; border: 2px dashed #5567BB; border-radius: 10px;"
+                                    )
+                                else:
+                                    ui.p(f"⚠️ No results found for query: '{query}'.", style="color: orange; text-align:center;")
+                            except Exception as e:
+                                ui.div(
+                                    ui.h5("Error during API retrieval:", style="color: red;"),
+                                    ui.p(str(e), style="color: red;")
+                                )
         
         with ui.nav_panel("None", value="collections"):
             ui.h3("🚧 Warning: Merge Collection is under construction 🚧")
@@ -8184,9 +8312,13 @@ with ui.tags.div(id="mainContent", class_="main-content"):
 
 
 # --- Sidebar Management ---
+sidebar_needs_update = reactive.Value(0)
+
 @render.express()
-@reactive.event(input.start_button)
+@reactive.event(sidebar_needs_update)
 def toggle_sidebar():
+    if sidebar_needs_update.get() == 0:
+        return
     with ui.tags.div(id="sidebar_2", class_="custom-sidebar"):
         with ui.accordion(id="sidebar_accordion_data", multiple=False, open=False):
             # Info Section
@@ -8203,7 +8335,7 @@ def toggle_sidebar():
                 ui.input_action_button("go_filters", "Filters", class_="sidebar-button", icon=ICONS["filters"])
 
             # Analysis Section
-            with ui.accordion_panel("Overview", icon=ICONS["play_colored"]):
+            with ui.accordion_panel("Dataset", icon=ICONS["play_colored"]):
                 ui.input_action_button("go_main", "Main Information", class_="sidebar-button", icon=ICONS["overview"])
                 ui.input_action_button("go_annual_scientific_production", "Annual Scientific Production", class_="sidebar-button", icon=ICONS["annual_growth_rate"])
                 ui.input_action_button("go_average_citations_per_year", "Average Citations per Year", class_="sidebar-button", icon=ICONS["average_citations_per_doc"])
@@ -8344,9 +8476,9 @@ ui.tags.script("""
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // Show both sidebars when 'start_button' is clicked
+    // Show both sidebars when 'start_button' or API fetch buttons are clicked
     document.addEventListener("click", function(e) {
-        if (e.target && e.target.id === "start_button") {
+        if (e.target && e.target.closest("#start_button, #openalex_fetch, #pubmed_fetch")) {
             setSidebarState(true);
         }
     });

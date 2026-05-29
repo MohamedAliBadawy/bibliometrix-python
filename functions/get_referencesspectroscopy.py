@@ -50,7 +50,20 @@ def get_references_spectroscopy(df, start_year, end_year=2005, field_separator_s
 
     # Aggiunta degli anni mancanti
     year_seq = rpys_table['CitedYear']
-    missing_years = set(range(year_seq.min(), year_seq.max() + 1)) - set(year_seq)
+    if len(year_seq) == 0:
+        # No references found in year range — return empty results
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="No cited references found in the selected year range",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        return fig, pd.DataFrame(), cr_table
+
+    y_min = int(year_seq.min())
+    y_max = int(year_seq.max())
+    missing_years = set(range(y_min, y_max + 1)) - set(year_seq)
     missing_years_df = pd.DataFrame({'CitedYear': list(missing_years), 'Citations': [0] * len(missing_years)})
     rpys_table = pd.concat([rpys_table, missing_years_df]).sort_values('CitedYear').reset_index(drop=True)
 
@@ -68,6 +81,7 @@ def get_references_spectroscopy(df, start_year, end_year=2005, field_separator_s
     # Identificazione dei top 3 riferimenti per anno
     top_references = cr_table.sort_values('Freq', ascending=False).groupby('CitedYear')['Reference'].apply(lambda refs: '\n'.join(refs)).reset_index()
     rpys_table = rpys_table.merge(top_references, left_on='CitedYear', right_on='CitedYear', how='left').rename(columns={'Reference': 'TopReferences'})
+    rpys_table['TopReferences'] = rpys_table['TopReferences'].fillna('')
 
     # Creazione del grafico
     fig = make_subplots(specs=[[{"secondary_y": True}]])

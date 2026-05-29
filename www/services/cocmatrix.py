@@ -46,17 +46,23 @@ def cocMatrix(df, Field="AU", type="sparse", n=None, sep=";", binary=True, short
         M.index = RowNames
 
     if Field == "CR":
-        M["CR"] = M["CR"].apply(lambda x: [ref.replace("DOI;", "DOI ") for ref in x] if isinstance(x, list) else x)
+        M["CR"] = M["CR"].apply(
+            lambda x: [str(ref).replace("DOI;", "DOI ") for ref in x if pd.notna(ref)] 
+            if isinstance(x, (list, tuple, set)) else x
+        )
 
     if Field in M.columns:
-        Fi = M[Field].fillna("").apply(lambda x: x if isinstance(x, list) else [i.strip() for i in x.split(sep)])
+        Fi = M[Field].fillna("").apply(
+            lambda x: x if isinstance(x, (list, tuple, set)) else 
+                      [i.strip() for i in str(x).split(sep) if i.strip()] if pd.notna(x) and str(x).strip() else []
+        )
     else:
         print(f"Field {Field} is not a column name of input data frame")
         return
 
-    Fi = Fi.apply(lambda x: [i.strip() for i in x])  # Equivalent to trim.leading in R
+    Fi = Fi.apply(lambda x: [str(i).strip() for i in x] if isinstance(x, (list, tuple, set)) else [])
     if Field == "CR":
-        Fi = Fi.apply(lambda x: [i for i in x if len(i) > 10])  # Delete not congruent references
+        Fi = Fi.apply(lambda x: [i for i in x if isinstance(i, str) and len(i) > 10] if isinstance(x, (list, tuple, set)) else [])
 
     allField = [item for sublist in Fi for item in sublist if item]
     if Field == "CR":
@@ -68,7 +74,7 @@ def cocMatrix(df, Field="AU", type="sparse", n=None, sep=";", binary=True, short
 
     if n:
         uniqueField = uniqueField[:n]
-    elif short:
+    elif short and Field != "SR":
         uniqueField = tabField[tabField > 1].index.tolist()
 
     if not uniqueField:
@@ -119,8 +125,12 @@ def reduceRefs(refs):
     Returns:
         A list of reduced references.
     """
+    if not isinstance(refs, (list, tuple, set)):
+        return []
     reduced_refs = []
     for ref in refs:
+        if not isinstance(ref, str):
+            continue
         # Remove everything after "V" followed by a digit
         v_match = re.search(r"V\d", ref)
         if v_match:

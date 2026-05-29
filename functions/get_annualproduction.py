@@ -13,13 +13,18 @@ def get_annual_production(df):
     """
     data = df.get()
 
+    # Filter out invalid years (<= 1800)
+    valid_data = data[data["PY"] > 1800]
+    if valid_data.empty:
+        valid_data = data
+
     # Calculate the number of publications per year
-    publications_per_year = data["PY"].value_counts().sort_index().reset_index()
+    publications_per_year = valid_data["PY"].value_counts().sort_index().reset_index()
     publications_per_year.columns = ["Year", "Freq"]
 
     # Find the range of years
-    min_year = publications_per_year["Year"].min()
-    max_year = publications_per_year["Year"].max()
+    min_year = int(publications_per_year["Year"].min())
+    max_year = int(publications_per_year["Year"].max())
 
     # Ensure all years in the range are present
     all_years = pd.DataFrame({"Year": range(min_year, max_year + 1)})

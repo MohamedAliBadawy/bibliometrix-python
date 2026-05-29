@@ -18,8 +18,9 @@ def get_author_production_over_time(df, top_k_authors):
     """
     data = df.get()
 
-    # Ensure "PY" is numeric
+    # Ensure "PY" is numeric and valid (ignore years <= 1800)
     data["PY"] = pd.to_numeric(data["PY"], errors="coerce")
+    data = data[data["PY"] > 1800]
 
     # Remove rows with invalid "PY" or "AU" values
     data = data.dropna(subset=["PY", "AU"])
@@ -101,7 +102,13 @@ def get_author_production_over_time(df, top_k_authors):
     fig.update_layout(
         height=800,  # Chart height
         xaxis=dict(title="Year", showgrid=True, gridcolor="lightgrey", dtick=2),
-        yaxis=dict(title="Author", showgrid=True, gridcolor="lightgrey"),
+        yaxis=dict(
+            title="Author", 
+            showgrid=True, 
+            gridcolor="lightgrey",
+            categoryorder="array",
+            categoryarray=list(top_authors)[::-1]
+        ),
         showlegend=False,
         margin=dict(l=0, r=0, t=40, b=0),  # Margins
     )

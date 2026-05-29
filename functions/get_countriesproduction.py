@@ -18,6 +18,22 @@ def get_countries_production(df):
     # Conta le occorrenze dei paesi
     df["AU_CO"] = df["AU_CO"].apply(lambda x: x if isinstance(x, list) else [x])
     df = df.explode("AU_CO")
+    df = df[df["AU_CO"].notna() & (df["AU_CO"].astype(str).str.strip() != "") & (df["AU_CO"].astype(str).str.upper() != "NA")]
+
+    # Guard: no country data (e.g. Lens without affiliations)
+    if df.empty:
+        empty_tab = pd.DataFrame(columns=["Nations", "Freq"])
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(
+                text="Country data not available for this database.<br>Affiliation/address fields are required to extract countries.",
+                x=0.5, y=0.5, showarrow=False, font=dict(size=15), align="center"
+            )],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        fig._config = fig._config | {'modeBarButtonsToRemove': ['pan', 'select', 'lasso2d', 'toImage'], 'displaylogo': False}
+        return fig, empty_tab
 
     # Funzione per normalizzare i nomi dei paesi
     def clean_country_names(country):

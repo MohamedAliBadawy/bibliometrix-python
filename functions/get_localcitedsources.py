@@ -20,18 +20,33 @@ def get_local_cited_sources(df, num_of_cited_sources):
     
     if isinstance(data["CR_SO"].iloc[0], list):  # Check if the first element is a list
         # Flatten the 'CR_SO' column containing lists
-        source_counts = (
-            pd.DataFrame(data["CR_SO"].explode())  # Explode lists into rows
-            .value_counts()  # Count occurrences
-            .reset_index()  # Reset index to get a DataFrame
-        )
-        source_counts.columns = ["Sources", "N. of Local Citations"]
+        exploded = data["CR_SO"].explode().dropna()
+        exploded = exploded[exploded.apply(lambda x: isinstance(x, str) and x.strip() != "")]
+        exploded = exploded.str.upper()
+        if len(exploded) == 0:
+            source_counts = pd.DataFrame(columns=["Sources", "N. of Local Citations"])
+        else:
+            source_counts = exploded.value_counts().reset_index()
+            source_counts.columns = ["Sources", "N. of Local Citations"]
     else:
         # If not a list, continue with the string method
-        source_counts = data["CR_SO"].str.split(";").explode().value_counts().reset_index()
+        exploded = data["CR_SO"].str.split(";").explode().dropna()
+        exploded = exploded[exploded.apply(lambda x: isinstance(x, str) and x.strip() != "")]
+        exploded = exploded.str.upper()
+        source_counts = exploded.value_counts().reset_index()
         source_counts.columns = ["Sources", "N. of Local Citations"]
 
     # Limit the number of sources to display
+    if len(source_counts) == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="No cited sources data available",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        return fig, source_counts
+
     if num_of_cited_sources > len(source_counts):
         num_of_cited_sources = len(source_counts)
 

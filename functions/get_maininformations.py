@@ -16,9 +16,16 @@ def get_main_informations(df, log=False):
 
     #### Min and Max Year ####
     start_time = time.time()
-    # Calculate the minimum and maximum publication years
-    data["Min_Year"] = data["PY"].min()
-    data["Max_Year"] = data["PY"].max()
+    # Calculate the minimum and maximum publication years (ignoring years <= 1800)
+    valid_years = data["PY"][data["PY"] > 1800]
+    if not valid_years.empty:
+        min_year = int(valid_years.min())
+        max_year = int(valid_years.max())
+    else:
+        min_year = int(data["PY"].min())
+        max_year = int(data["PY"].max())
+    data["Min_Year"] = min_year
+    data["Max_Year"] = max_year
     print(f"Min and Max Year calculation time: {time.time() - start_time:.4f} seconds")
 
     #### Unique Sources ####
@@ -28,11 +35,13 @@ def get_main_informations(df, log=False):
 
     #### Annual Growth Rate (CAGR) ####
     start_time = time.time()
-    # Calculate the number of publications per year
-    publications_per_year = data["PY"].value_counts().sort_index()
+    # Calculate the number of publications per year (excluding <= 1800)
+    publications_per_year = valid_years.value_counts().sort_index()
 
     # Calculate the number of years in the range
-    ny = data["PY"].max() - data["PY"].min()
+    ny = max_year - min_year
+    if ny <= 0:
+        ny = 1
 
     # Calculate the Compound Annual Growth Rate (CAGR)
     if len(publications_per_year) > 1:
@@ -54,8 +63,21 @@ def get_main_informations(df, log=False):
     # Assume that data["AU"] is a list of strings already split
     AU_list = data["AU"] 
 
-    # Remove empty spaces and empty strings
-    listAU = [author for sublist in AU_list for author in sublist if author]
+    # Flatten the list of authors
+    listAU = []
+    for sublist in AU_list:
+        if isinstance(sublist, list):
+            for author in sublist:
+                if isinstance(author, str):
+                    listAU.append(author.strip())
+                elif isinstance(author, list):
+                    listAU.extend([str(a).strip() for a in author if a])
+                else:
+                    listAU.append(str(author).strip())
+        elif isinstance(sublist, str):
+            listAU.extend([author.strip() for author in sublist.split(';') if author.strip()])
+        else:
+            continue
 
     # Remove duplicates
     listAU = list(set(listAU))
@@ -106,7 +128,8 @@ def get_main_informations(df, log=False):
     
     # Calculate "International_Co_Authorship" without loop
     coll = data[data["Country_Count"] > 1].shape[0]
-    data["International_Co_Authorship"] = 100 * coll / data.shape[0]
+    valid_docs = data[data["Country_Count"] > 0].shape[0]
+    data["International_Co_Authorship"] = round(100 * coll / valid_docs, 1) if valid_docs > 0 else 0
     
     # Save the list of international co-authors to a text file
     if log:
@@ -128,10 +151,19 @@ def get_main_informations(df, log=False):
         data["DE"] = data["DE"].fillna("")
 
     # Split the 'DE' column by ';' and flatten the list
-    DE = pd.Series([item.upper() for sublist in data["DE"] for item in sublist])
+    de_flat = []
+    for sublist in data["DE"]:
+        if isinstance(sublist, list):
+            for item in sublist:
+                if pd.notna(item) and str(item).strip():
+                    de_flat.extend([k.upper().strip() for k in str(item).split(';') if k.strip()])
+        elif isinstance(sublist, str) and sublist.strip():
+            de_flat.extend([item.upper().strip() for item in sublist.split(';') if item.strip()])
+    
+    DE = pd.Series(de_flat)
 
-    # Remove extra spaces, periods, and commas, and keep only unique values
-    DE = DE.str.replace(r"\s+|\.|,", " ", regex=True).str.strip().unique()
+    # Keep unique values and strip leading/trailing whitespace
+    DE = DE.str.strip().unique()
 
     # Remove any NaN values
     DE = DE[~pd.isna(DE)]
@@ -156,10 +188,19 @@ def get_main_informations(df, log=False):
         data["CR"] = data["CR"].fillna("")
 
     # Split the 'CR' and flatten the list
-    CR = pd.Series([item.upper() for sublist in data["CR"] for item in sublist])
+    cr_flat = []
+    for sublist in data["CR"]:
+        if isinstance(sublist, list):
+            for item in sublist:
+                if pd.notna(item) and str(item).strip():
+                    cr_flat.extend([k.upper().strip() for k in str(item).split(';') if k.strip()])
+        elif isinstance(sublist, str) and sublist.strip():
+            cr_flat.extend([item.upper().strip() for item in sublist.split(';') if item.strip()])
+    
+    CR = pd.Series(cr_flat)
 
-    # Remove extra spaces, periods, and commas, and keep only unique values
-    CR = CR.str.replace(r"\s+|\|,", " ", regex=True).str.strip().unique()
+    # Keep unique values and strip leading/trailing whitespace
+    CR = CR.str.strip().unique()
 
     # Remove any NaN values
     CR = CR[~pd.isna(CR)]
@@ -181,10 +222,15 @@ def get_main_informations(df, log=False):
 
     #### Document Average Age ####
     start_time = time.time()
-    # Calculate the average age of the documents
+    # Calculate the average age of the documents (ignoring years <= 1800)
     current_year = pd.Timestamp.now().year
-    data["Document_Age"] = current_year - data["PY"]
-    data["Document_Average_Age"] = round(data["Document_Age"].mean(), 2)
+    valid_py = data["PY"][data["PY"] > 1800]
+    if not valid_py.empty:
+        data["Document_Age"] = current_year - valid_py
+        data["Document_Average_Age"] = round(data["Document_Age"].mean(), 2)
+    else:
+        data["Document_Age"] = current_year - data["PY"]
+        data["Document_Average_Age"] = round(data["Document_Age"].mean(), 2)
     print(f"Document Average Age calculation time: {time.time() - start_time:.4f} seconds")
 
     #### Average citations per doc ####

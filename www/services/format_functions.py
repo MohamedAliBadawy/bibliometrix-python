@@ -1622,8 +1622,8 @@ def process_single_file(data, source, file_type, author):
             'VL': format_vl_column(entry, source, file_type),           # Volume
         }
 
-        # Add other columns from 'columns'
-        for column in columns:
+        # Add any remaining columns from the raw entry that aren't yet mapped
+        for column in entry.keys():
             if column not in entry_data:  # Avoid overwriting existing keys
                 entry_data[column] = entry.get(column, None)
         

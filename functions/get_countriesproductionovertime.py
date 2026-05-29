@@ -15,6 +15,9 @@ def get_countries_production_over_time(df, top_k_countries):
     df = metaTagExtraction(df, "AU_CO")
     data = df.get()
 
+    # Filter out invalid years (<= 1800)
+    data = data[data["PY"] > 1800]
+
     AFF = pd.Series(data["AU_CO"]).dropna().apply(lambda x: [aff.strip() for aff in x if aff.strip() != ""])
     nAFF = [len(aff) for aff in AFF]
 

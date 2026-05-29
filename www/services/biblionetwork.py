@@ -5,6 +5,8 @@ from .cocmatrix import *
 def biblionetwork(M, analysis="coupling", network="authors", n=None, sep=";", short=False, shortlabel=True, remove_terms=None, synonyms=None):
     
     def crossprod(A, B):
+        if A is None or B is None:
+            return None
         return A.T @ B  # Moltiplicazione matriciale per ottenere il prodotto incrociato
 
     NetMatrix = None
@@ -16,7 +18,9 @@ def biblionetwork(M, analysis="coupling", network="authors", n=None, sep=";", sh
             CRA = crossprod(WCR, WA)
             NetMatrix = crossprod(CRA, CRA)
         elif network == "references":
-            WCR = cocMatrix(M, Field="CR", type="sparse", n=n, sep=sep, short=short).T
+            WCR = cocMatrix(M, Field="CR", type="sparse", n=n, sep=sep, short=short)
+            if WCR is not None:
+                WCR = WCR.T
             NetMatrix = crossprod(WCR, WCR)
         elif network == "sources":
             WSO = cocMatrix(M, Field="SO", type="sparse", n=n, sep=sep, short=short)

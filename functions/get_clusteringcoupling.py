@@ -68,12 +68,23 @@ def get_clustering_coupling(df, unit_of_analysis, coupling_measured, stemmer, im
 
     # Generate layout
     layout = graph.layout_fruchterman_reingold()
+    # Replace any nan/inf layout coordinates with 0.0
+    layout_fixed = []
+    for pos in layout:
+        x_val = pos[0] if pd.notna(pos[0]) and not np.isinf(pos[0]) else 0.0
+        y_val = pos[1] if pd.notna(pos[1]) and not np.isinf(pos[1]) else 0.0
+        layout_fixed.append([x_val, y_val])
+    layout = layout_fixed
+
     # Get coordinates from layout
     coords = np.array([[pos[0], pos[1]] for pos in layout])
     
     # Scale coordinates to fit 800px height
     # First normalize to [-1,1] range
-    coords = coords / np.abs(coords).max()
+    max_val = np.abs(coords).max()
+    if pd.isna(max_val) or max_val == 0:
+        max_val = 1.0
+    coords = coords / max_val
     
     # Then scale to target dimensions
     # Width will be proportional to maintain aspect ratio
@@ -107,27 +118,25 @@ def get_clustering_coupling(df, unit_of_analysis, coupling_measured, stemmer, im
         else:  
             font_opacity = 1.0
 
-        # Calculate font opacity using R-like formula
-        # min_font_size = 80   # Minimum node size 
-        # max_font_size = 150  # Maximum node size 
-        # font_opacity = np.sqrt((font_size - min_font_size) / (max_font_size - min_font_size)) 
-        # font_opacity = max(0.1, min(1, font_opacity))  # Clamp between 0.3 and 0.8
+        # Ensure x and y coordinates are float and not nan/inf
+        x_coord = float(layout[idx][0]) * 1000 if pd.notna(layout[idx][0]) and not np.isinf(layout[idx][0]) else 0.0
+        y_coord = float(layout[idx][1]) * 1000 if pd.notna(layout[idx][1]) and not np.isinf(layout[idx][1]) else 0.0
         
         nodes.append({
             'id': vertex.index,
             'label': vertex["name"] if "name" in vertex.attributes() else f"Node {vertex.index}",
             'title': vertex["name"] if "name" in vertex.attributes() else f"Node {vertex.index}",
             'color': node_color,
-            'size': node_size,
+            'size': float(node_size) if pd.notna(node_size) else 30.0,
             'font': {
-                'size': font_size, 
+                'size': float(font_size) if pd.notna(font_size) else 75.0, 
                 'color': f'rgba(0,0,0,{font_opacity})', 
                 'vadjust': -0.7*font_size if node_shape.lower() in ['dot', 'square'] else 0
             },
             'shadow': True,
             'shape': 'dot',
-            'x': layout[idx][0] * 1000,
-            'y': layout[idx][1] * 1000
+            'x': x_coord,
+            'y': y_coord
         })
 
     # Remove overlapping labels
@@ -173,7 +182,13 @@ def get_clustering_coupling(df, unit_of_analysis, coupling_measured, stemmer, im
         
         # Calculate edge width similar to R implementation
         edge_weight = edge.attributes().get('weight', 1)
-        normalized_weight = (edge_weight ** 2 / (max_weight ** 2)) * (10 + 2.5)  # 2.5 is base edge size
+        if pd.isna(edge_weight): edge_weight = 1
+        if max_weight == 0 or pd.isna(max_weight):
+            normalized_weight = 2.5
+        else:
+            normalized_weight = (float(edge_weight) ** 2 / (float(max_weight) ** 2)) * (10 + 2.5)  # 2.5 is base edge size
+        if pd.isna(normalized_weight) or np.isinf(normalized_weight):
+            normalized_weight = 2.5
         
         edge_tuple = (source, target) if source < target else (target, source)
         
@@ -221,7 +236,12 @@ def get_clustering_coupling(df, unit_of_analysis, coupling_measured, stemmer, im
         new_css = "     .card {\n                 border: none;\n             }"
         updated_html = html.replace("</style>", new_css + "\n        </style>")
         updated_html = updated_html.replace("1px solid lightgray", "none")
-        
         f.write(updated_html)
+
+    # Ensure no NaN values are present to prevent json out of range compliant errors
+    if cm_data is not None:
+        cm_data = cm_data.fillna(0)
+    if cm_clusters is not None:
+        cm_clusters = cm_clusters.fillna(0)
 
     return fig, html_path.split(os.sep)[-1], cm_data, cm_clusters

@@ -27,6 +27,17 @@ def get_local_cited_documents(df, num_of_local_cited_docs, field_separator, fast
 
     # Create a histogram network
     H = histNetwork(df, min_citations=loccit, sep=";", network=False)
+    if H is None:
+        empty_df = pd.DataFrame(columns=["Document", "DOI", "Year", "Local Citations", "Global Citations"])
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="Local citation analysis not available for this database",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        fig = go.FigureWidget(fig)
+        return fig, empty_df
+
     LCS = H['histData']
     M = H['M']
     

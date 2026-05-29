@@ -29,7 +29,7 @@ def thematic_map(df, field="ID", n=250, minfreq=5, ngrams=1, stemming=False, siz
         else:
             raise ValueError("Invalid field specified.")
 
-        if not NetMatrix.empty:
+        if NetMatrix is not None and not NetMatrix.empty:
             Net = network_plot(NetMatrix, normalize="association", Title="Keyword co-occurrences", type="auto",
                        labelsize=n_labels, halo=False, cluster=cluster, remove_isolates=True,
                        community_repulsion=community_repulsion, remove_multiple=False, noloops=True,
@@ -78,21 +78,26 @@ def thematic_map(df, field="ID", n=250, minfreq=5, ngrams=1, stemming=False, siz
         })
         
         # Filter and process cluster data
-        df_lab = (df_lab[df_lab['sC'] >= minfreq]
+        df_lab_filtered = df_lab[df_lab['sC'] >= minfreq]
+        if df_lab_filtered.empty:
+            print("\n\nNo keywords met the minimum frequency threshold!\n\n")
+            return None
+
+        df_lab = (df_lab_filtered
                 .groupby('groups')
                 .apply(lambda x: pd.Series({
                     'freq': x['sC'].sum(),
                     'cluster_label': x.loc[x['sC'].idxmax(), 'words'],
-                    'sC': list(x['sC']),  # Se necessario mantenere i valori di sC
-                    'words': ', '.join(x['words'].astype(str)),  # <-- Converte in stringa pulita
-                    'color': x['color'].iloc[0]  # Prende il primo valore della colonna
+                    'sC': list(x['sC']),
+                    'words': list(x['words']),
+                    'color': x['color'].iloc[0]
                 }))
                 .reset_index())
 
         # Explode both words and sC columns to create rows for each word and its occurrence count
         df_lab = df_lab.assign(
-            words=df_lab['words'].str.split(', '),
-            sC=df_lab['sC']  # Keep sC as is since it's already a list
+            words=df_lab['words'],
+            sC=df_lab['sC']
         ).explode(['words', 'sC']).reset_index(drop=True)
 
         # Convert to upper triangle matrix and create edge dataframe
@@ -101,7 +106,6 @@ def thematic_map(df, field="ID", n=250, minfreq=5, ngrams=1, stemming=False, siz
         sEij = triu(sEij.values)
         
         df_lab_top = df_lab[['words', 'groups']].reset_index(drop=True)
-        df_lab_top = df_lab_top.assign(words=df_lab_top['words'].str.split(', ')).explode('words').reset_index(drop=True)
 
         # Create edge list dataframe
         sEij_df = pd.DataFrame(sEij, index=index_names, columns=column_names)

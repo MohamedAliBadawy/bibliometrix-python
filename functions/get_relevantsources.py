@@ -17,6 +17,15 @@ def get_relevant_sources(df, num_of_sources):
     # Drop rows with missing values
     data = data.dropna(subset=["SO"])
 
+    # Ensure SO is string
+    data["SO"] = data["SO"].apply(lambda x: x[0] if isinstance(x, list) and x else str(x) if x else "")
+
+    # Filter out empty SO
+    data = data[data["SO"] != ""]
+
+    if data.empty:
+        return None, None  # or some default
+
     # Count the occurrences of each source
     source_counts = data["SO"].value_counts().reset_index()
     source_counts.columns = ["Sources", "N. of Documents"]

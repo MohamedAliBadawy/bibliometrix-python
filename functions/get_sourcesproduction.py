@@ -13,10 +13,22 @@ def get_sources_production(df, num_of_sources_production, occurences):
     Returns:
         A Plotly figure object representing the sources' production over time.
     """
-    data = df.get()
+    class FilteredDF:
+        def __init__(self, val):
+            self.val = val
+        def get(self):
+            return self.val
+
+    raw_data = df.get()
+    # Filter out invalid years (<= 1800)
+    data = raw_data[raw_data["PY"] > 1800].copy()
+    if data.empty:
+        data = raw_data.copy()
+
+    filtered_df = FilteredDF(data)
 
     # Calculate the number of publications per year for each source
-    WSO = cocMatrix(df, Field="SO")
+    WSO = cocMatrix(filtered_df, Field="SO")
     if WSO.shape[1] == 1:
         WSO = pd.DataFrame(WSO, columns=[data["SO"].iloc[0]])
 
@@ -24,7 +36,7 @@ def get_sources_production(df, num_of_sources_production, occurences):
         num_of_sources_production = WSO.shape[1]
 
     data["PY"] = data["PY"].astype(str)
-    WPY = cocMatrix(df, Field="PY")
+    WPY = cocMatrix(filtered_df, Field="PY")
     data["PY"] = data["PY"].astype(int)
 
     missing_years = set(range(data["PY"].min(), data["PY"].max() + 1)) - set(WPY.columns.astype(int))

@@ -105,25 +105,21 @@ def table_tag(df, tag, ngrams=1, remove_terms=None, synonyms=None):
     # Remove duplicates
     M = M.drop_duplicates(subset='SR')
     
-    # Get text data based on tag
-    if tag in ['AB', 'TI']:
-        text_data = term_extraction(df, field=tag, stemming=False, verbose=False, 
-                                  ngrams=ngrams, remove_terms=remove_terms, synonyms=synonyms)
-        text_data = text_data.get()
-        text_data = text_data[f"{tag}_TM"]
-    else:
-        text_data = M[tag]
+    # Get text data unconditionally
+    text_data = term_extraction(df, field=tag, stemming=False, verbose=False, 
+                                ngrams=ngrams, remove_terms=remove_terms, synonyms=synonyms)
+    text_data = text_data.get()
+    text_data = text_data[f"{tag}_TM"]
 
-    # Handle list columns (DE and ID)
-    if tag in ['DE', 'ID']:
-        text_data = text_data.dropna().apply(lambda x: ', '.join(eval(x) if isinstance(x, str) else x))
-
-    # Process words
-    if tag in ['DE', 'ID']:
-        words = text_data.dropna().astype(str).str.cat(sep=', ').upper()
-        words = [word.strip() for word in words.split(',') if word and word.strip()]
-    else:
-        words = [item for sublist in text_data for item in sublist]
+    # Process words in a float-safe way (since all fields now yield a list of lists of terms)
+    words = []
+    for sublist in text_data:
+        if isinstance(sublist, (list, tuple, set)):
+            for item in sublist:
+                if isinstance(item, (str, bytes)):
+                    words.append(str(item))
+        elif isinstance(sublist, str) and sublist:
+            words.append(sublist)
 
     # Apply n-grams if needed
     # if ngrams > 1 and tag not in ['DE', 'ID']:

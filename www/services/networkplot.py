@@ -194,13 +194,25 @@ def delete_isolates(graph, mode='all'):
     return graph
 
 
+class ClusterGroups:
+    def __init__(self, membership):
+        self.membership = membership
+    def __getitem__(self, key):
+        if key == "membership":
+            return self.membership
+        raise KeyError(key)
+    def get(self, key, default=None):
+        if key == "membership":
+            return self.membership
+        return default
+
 def clustering_network(bsk_network, cluster):
     # Determina i colori disponibili
     colorlist = color_list()
 
     # Determina il clustering in base al metodo specificato
     if cluster == "none":
-        net_groups = {"membership": [1] * len(bsk_network.vs)}
+        net_groups = ClusterGroups([1] * len(bsk_network.vs))
     elif cluster == "optimal":
         net_groups = bsk_network.community_optimal_modularity()
     elif cluster == "leiden":
