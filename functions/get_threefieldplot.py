@@ -102,6 +102,15 @@ def get_three_field_plot(df, left_field, middle_field, right_field, left_field_i
     Edges = Edges.drop(columns=['group'])
     Edges = Edges[Edges["Value"] >= 1]  # Filter edges with weight >= min.flow
 
+    if Edges is None or len(Edges) == 0:
+        fig = go.Figure()
+        fig.update_layout(
+            annotations=[dict(text="No overlapping connections found between the selected fields.",
+                            x=0.5, y=0.5, showarrow=False, font=dict(size=16))],
+            plot_bgcolor='white', height=300
+        )
+        return go.FigureWidget(fig)
+
     # Same as before up to where Nodes are created
     Nodes = pd.DataFrame({
         "Nodes": [*TopL, *TopM, *TopR],
@@ -114,9 +123,8 @@ def get_three_field_plot(df, left_field, middle_field, right_field, left_field_i
     Edges = Edges[Edges["weight"] >= min_flow]
 
     # Set x positions for nodes based on level
-    Kx = len(Nodes['group'].unique())
     Ky = len(Nodes)
-    Nodes['coordX'] = np.repeat(np.linspace(0, 1, Kx), Nodes['level'].value_counts().sort_index().values)
+    Nodes['coordX'] = (Nodes['level'] - 1) / 2.0
     Nodes['coordY'] = np.repeat(0.1, Ky)
 
     # Set custom base colors for nodes by group for better distinction
